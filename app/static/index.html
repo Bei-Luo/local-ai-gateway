@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Local AI Gateway</title>
+    <link rel="stylesheet" href="/assets/styles.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark">L</span>
+        <div>
+          <strong>Local AI Gateway</strong>
+          <span>模型路由控制台</span>
+        </div>
+      </div>
+      <div class="health" id="health"><span></span>正在检查服务</div>
+    </header>
+
+    <main>
+      <section class="summary-band" aria-labelledby="page-title">
+        <div>
+          <p class="eyebrow">ROUTING OVERVIEW</p>
+          <h1 id="page-title">模型路由</h1>
+          <p>为每个本地模型名绑定独立的上游站点、模型和凭据。</p>
+        </div>
+        <button class="primary-button" id="add-route" type="button">新增路由</button>
+      </section>
+
+      <section class="metrics" aria-label="路由统计">
+        <div><span>全部路由</span><strong id="total-count">0</strong></div>
+        <div><span>已启用</span><strong id="enabled-count">0</strong></div>
+        <div><span>网关端点</span><code id="gateway-endpoint">http://127.0.0.1:8787/v1</code></div>
+      </section>
+
+      <section class="routes-section" aria-labelledby="routes-heading">
+        <div class="section-heading">
+          <div>
+            <h2 id="routes-heading">路由列表</h2>
+            <p>请求中的模型名将匹配“本地模型名”。</p>
+          </div>
+          <label class="search-field">
+            <span class="sr-only">搜索路由</span>
+            <input id="search" type="search" placeholder="搜索模型或站点">
+          </label>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>本地模型名</th>
+                <th>上游模型</th>
+                <th>上游站点</th>
+                <th>API Key</th>
+                <th>状态</th>
+                <th><span class="sr-only">操作</span></th>
+              </tr>
+            </thead>
+            <tbody id="routes-body"></tbody>
+          </table>
+          <div class="empty-state" id="empty-state" hidden>
+            <strong>还没有模型路由</strong>
+            <span>新增第一条路由后，它会出现在 OpenAI 兼容的模型列表中。</span>
+            <button class="secondary-button" id="empty-add" type="button">新增路由</button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <dialog id="route-dialog">
+      <form id="route-form">
+        <div class="dialog-heading">
+          <div>
+            <p class="eyebrow">MODEL ROUTE</p>
+            <h2 id="dialog-title">新增路由</h2>
+          </div>
+          <button class="icon-button" id="close-dialog" type="button" aria-label="关闭">&#215;</button>
+        </div>
+
+        <input id="route-id" type="hidden">
+        <label>
+          <span>本地模型名</span>
+          <input id="alias" name="alias" required maxlength="128" placeholder="claude-sonnet-work" autocomplete="off">
+          <small>OpenCode 配置和请求中使用的模型 ID</small>
+        </label>
+        <label>
+          <span>上游模型名</span>
+          <input id="upstream-model" name="upstream_model" required maxlength="256" placeholder="claude-3-7-sonnet" autocomplete="off">
+        </label>
+        <label>
+          <span>上游 Base URL</span>
+          <input id="base-url" name="base_url" type="url" required placeholder="https://api.example.com/v1" autocomplete="url">
+        </label>
+        <label>
+          <span>API Key</span>
+          <input id="api-key" name="api_key" type="password" placeholder="sk-..." autocomplete="new-password">
+          <small id="key-help">Key 保存在本机 SQLite 数据库中</small>
+        </label>
+        <label class="toggle-row">
+          <span><strong>启用路由</strong><small>关闭后模型不会被网关匹配</small></span>
+          <input id="enabled" name="enabled" type="checkbox" checked>
+        </label>
+
+        <div class="form-error" id="form-error" role="alert" hidden></div>
+        <div class="dialog-actions">
+          <button class="secondary-button" id="cancel-dialog" type="button">取消</button>
+          <button class="primary-button" id="save-route" type="submit">保存路由</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="/assets/app.js" defer></script>
+  </body>
+</html>
