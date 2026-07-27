@@ -10,12 +10,12 @@
 ## Architecture
 
 - `app/main.py` owns the FastAPI admin API, `/v1/models`, and the generic OpenAI-compatible `/v1/*` proxy. Keep streamed upstream responses streamed; do not eagerly read them.
-- `app/store.py` is the SQLite persistence boundary. API keys are stored locally in plaintext but must only be returned by admin APIs as masks.
+- `app/store.py` is the SQLite persistence boundary for model routes, settings, and the latest 1000 usage records. Secrets are stored locally in plaintext but must only be returned by admin APIs as masks, except once when a new gateway token is generated.
 - `app/static/` is a build-free same-origin admin UI; there is intentionally no Node runtime dependency.
 - A route alias is the model ID exposed to OpenCode. Before proxying, replace it with `upstream_model` and replace the incoming authorization header with that route's API key.
 
 ## Runtime Constraints
 
 - Default state is `data/gateway.db`; tests must pass a temporary database to `create_app`.
-- Keep the default bind address on `127.0.0.1`: the admin API has no login. `GATEWAY_API_KEY` protects `/v1/*`, not the admin UI.
+- Keep the default bind address on `127.0.0.1`: the admin API has no login. `GATEWAY_API_KEY` overrides a UI-generated token; either protects `/v1/*`, not the admin UI.
 - Upstreams must expose OpenAI-compatible paths beneath their configured Base URL. The gateway does not translate between vendor-specific protocols.

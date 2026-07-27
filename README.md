@@ -6,6 +6,9 @@
 
 - 一个本地提供商承载任意数量的模型别名
 - 每个模型独立配置上游站点、真实模型名和 API Key
+- 从上游 `/models` 检测并选择可用模型
+- 生成本地网关 API 令牌，保护 OpenAI-compatible `/v1/*` 接口
+- 记录最近 1000 次转发的模型、接口、状态码和响应耗时
 - 透传 `/v1/*` JSON 请求，适用于 Chat Completions、Responses、Embeddings 等 OpenAI-compatible 接口
 - 透传 SSE 流式响应
 - 提供 `/v1/models` 模型目录
@@ -25,7 +28,7 @@ python -m venv .venv
 可选环境变量：
 
 - `GATEWAY_DB_PATH`：修改 SQLite 数据库位置。
-- `GATEWAY_API_KEY`：要求 Agent 请求携带 `Authorization: Bearer <key>`。不设置时本地代理接口无需认证。
+- `GATEWAY_API_KEY`：要求 Agent 请求携带 `Authorization: Bearer <key>`。它优先于管理页面生成的令牌；两者都未设置时，本地代理接口无需认证。
 
 服务应保持监听 `127.0.0.1`。如需暴露到局域网，必须先增加管理端认证和 TLS，不能直接修改为 `0.0.0.0` 后裸露运行。
 

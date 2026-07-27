@@ -15,13 +15,48 @@ class RouteStore:
                 """
                 CREATE TABLE IF NOT EXISTS model_routes (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    site_name TEXT NOT NULL DEFAULT '',
                     alias TEXT NOT NULL UNIQUE COLLATE NOCASE,
                     upstream_model TEXT NOT NULL,
+                    note TEXT NOT NULL DEFAULT '',
                     base_url TEXT NOT NULL,
                     api_key TEXT NOT NULL,
                     enabled INTEGER NOT NULL DEFAULT 1,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
+                )
+                """
+            )
+            columns = {
+                row["name"]
+                for row in self.connection.execute("PRAGMA table_info(model_routes)").fetchall()
+            }
+            if "note" not in columns:
+                self.connection.execute(
+                    "ALTER TABLE model_routes ADD COLUMN note TEXT NOT NULL DEFAULT ''"
+                )
+            if "site_name" not in columns:
+                self.connection.execute(
+                    "ALTER TABLE model_routes ADD COLUMN site_name TEXT NOT NULL DEFAULT ''"
+                )
+            self.connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                )
+                """
+            )
+            self.connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS usage_records (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    created_at TEXT NOT NULL,
+                    model_alias TEXT NOT NULL,
+                    upstream_model TEXT NOT NULL,
+                    path TEXT NOT NULL,
+                    status_code INTEGER NOT NULL,
+                    duration_ms INTEGER NOT NULL
                 )
                 """
             )
@@ -54,12 +89,14 @@ class RouteStore:
             cursor = self.connection.execute(
                 """
                 INSERT INTO model_routes
-                    (alias, upstream_model, base_url, api_key, enabled, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                    (site_name, alias, upstream_model, note, base_url, api_key, enabled, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
+                    data["site_name"],
                     data["alias"],
                     data["upstream_model"],
+                    data["note"],
                     data["base_url"],
                     data["api_key"],
                     int(data["enabled"]),
@@ -79,13 +116,15 @@ class RouteStore:
             self.connection.execute(
                 """
                 UPDATE model_routes
-                SET alias = ?, upstream_model = ?, base_url = ?, api_key = ?,
+                SET site_name = ?, alias = ?, upstream_model = ?, note = ?, base_url = ?, api_key = ?,
                     enabled = ?, updated_at = ?
                 WHERE id = ?
                 """,
                 (
+                    data["site_name"],
                     data["alias"],
                     data["upstream_model"],
+                    data["note"],
                     data["base_url"],
                     api_key,
                     int(data["enabled"]),
@@ -101,6 +140,76 @@ class RouteStore:
                 "DELETE FROM model_routes WHERE id = ?", (route_id,)
             )
         return cursor.rowcount > 0
+
+    def set_enabled(self, route_id: int, enabled: bool) -> dict | None:
+        now = datetime.now(timezone.utc).isoformat()
+        with self.lock, self.connection:
+            cursor = self.connection.execute(
+                "UPDATE model_routes SET enabled = ?, updated_at = ? WHERE id = ?",
+                (int(enabled), now, route_id),
+            )
+        if cursor.rowcount == 0:
+            return None
+        return self.get_route(route_id)
+
+    def get_setting(self, key: str) -> str | None:
+        with self.lock:
+            row = self.connection.execute(
+                "SELECT value FROM settings WHERE key = ?", (key,)
+            ).fetchone()
+        return row["value"] if row else None
+
+    def set_setting(self, key: str, value: str) -> None:
+        with self.lock, self.connection:
+            self.connection.execute(
+                """
+                INSERT INTO settings (key, value) VALUES (?, ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                """,
+                (key, value),
+            )
+
+    def delete_setting(self, key: str) -> None:
+        with self.lock, self.connection:
+            self.connection.execute("DELETE FROM settings WHERE key = ?", (key,))
+
+    def record_usage(
+        self,
+        model_alias: str,
+        upstream_model: str,
+        path: str,
+        status_code: int,
+        duration_ms: int,
+    ) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        with self.lock, self.connection:
+            self.connection.execute(
+                """
+                INSERT INTO usage_records
+                    (created_at, model_alias, upstream_model, path, status_code, duration_ms)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (now, model_alias, upstream_model, path, status_code, duration_ms),
+            )
+            self.connection.execute(
+                """
+                DELETE FROM usage_records
+                WHERE id NOT IN (
+                    SELECT id FROM usage_records ORDER BY id DESC LIMIT 1000
+                )
+                """
+            )
+
+    def list_usage(self, limit: int = 100) -> list[dict]:
+        with self.lock:
+            rows = self.connection.execute(
+                "SELECT * FROM usage_records ORDER BY id DESC LIMIT ?", (limit,)
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def clear_usage(self) -> None:
+        with self.lock, self.connection:
+            self.connection.execute("DELETE FROM usage_records")
 
     def close(self) -> None:
         self.connection.close()
