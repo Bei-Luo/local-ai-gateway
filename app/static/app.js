@@ -38,7 +38,7 @@ function render() {
       <td><span class="status ${route.enabled ? "" : "disabled"}">${route.enabled ? "已启用" : "已停用"}</span></td>
       <td class="actions">
         <button class="text-button" type="button" data-edit="${route.id}">编辑</button>
-        <button class="route-switch" type="button" role="switch" aria-checked="${route.enabled}" title="${route.enabled ? "停用路由" : "启用路由"}" data-toggle="${route.id}">
+        <button class="route-switch" type="button" role="switch" aria-checked="${route.enabled}" title="${route.enabled ? "停用路由" : "启用此线路并停用其他同名线路"}" data-toggle="${route.id}">
           <span aria-hidden="true"></span><span class="sr-only">${route.enabled ? "停用路由" : "启用路由"}</span>
         </button>
         <button class="danger-button" type="button" data-delete="${route.id}">删除</button>
@@ -72,10 +72,11 @@ function renderUsage() {
   body.innerHTML = state.usage.map((record) => `
     <tr>
       <td><code>${escapeHtml(formatTimestamp(record.created_at))}</code></td>
+      <td><span class="usage-site">${escapeHtml(record.site_name || "-")}</span></td>
       <td><code>${escapeHtml(record.model_alias || "-")}</code></td>
-      <td><code>${escapeHtml(record.upstream_model || "-")}</code></td>
-      <td><code>${escapeHtml(record.path)}</code></td>
+      <td><span class="request-type">${escapeHtml(record.request_type || "-")}${record.streamed ? '<small>流式</small>' : ""}</span></td>
       <td><span class="request-status ${record.status_code < 400 ? "success" : "error"}">${record.status_code}</span></td>
+      <td><code>${record.ttft_ms == null ? "-" : `${record.ttft_ms} ms`}</code></td>
       <td><code>${record.duration_ms} ms</code></td>
     </tr>
   `).join("");

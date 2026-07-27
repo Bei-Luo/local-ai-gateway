@@ -59,7 +59,7 @@
         <div class="section-heading">
           <div>
             <h2 id="routes-heading">模型路由</h2>
-            <p>请求将按照本地模型名匹配对应上游。</p>
+            <p>相同本地模型名可配置多个站点，但仅允许一条线路启用。</p>
           </div>
           <label class="search-field">
             <span class="sr-only">搜索路由</span>
@@ -108,11 +108,12 @@
             <thead>
               <tr>
                 <th>时间</th>
+                <th>站点名称</th>
                 <th>本地模型</th>
-                <th>上游模型</th>
-                <th>接口</th>
+                <th>请求类型</th>
                 <th>状态</th>
-                <th>耗时</th>
+                <th>首字耗时</th>
+                <th>总耗时</th>
               </tr>
             </thead>
             <tbody id="usage-body"></tbody>
@@ -172,7 +173,7 @@
           </div>
         </div>
         <label class="toggle-row">
-          <span><strong>启用路由</strong><small>关闭后模型不会被网关匹配</small></span>
+          <span><strong>启用路由</strong><small>启用后会自动停用其他同名线路</small></span>
           <input id="enabled" name="enabled" type="checkbox" checked>
         </label>
 

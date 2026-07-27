@@ -86,8 +86,15 @@ def test_existing_database_is_migrated_with_note_column(tmp_path):
     app = create_app(database, httpx.AsyncClient())
     with TestClient(app) as client:
         route = add_route(client, note="Migrated database")
+        duplicate = add_route(
+            client,
+            site_name="Second provider",
+            upstream_model="same-alias-other-model",
+            api_key="sk-second-route-key",
+        )
 
     assert route["note"] == "Migrated database"
+    assert duplicate["alias"] == route["alias"]
 
 
 def test_proxy_rewrites_model_and_authorization(tmp_path):
@@ -128,10 +135,13 @@ def test_proxy_rewrites_model_and_authorization(tmp_path):
         usage = client.get("/admin/api/usage").json()
         assert len(usage) == 1
         assert usage[0]["model_alias"] == "work-model"
-        assert usage[0]["upstream_model"] == "vendor-model-v2"
+        assert usage[0]["site_name"] == "Change2Pro"
         assert usage[0]["path"] == "/v1/chat/completions"
+        assert usage[0]["request_type"] == "Chat"
+        assert usage[0]["streamed"] == 0
         assert usage[0]["status_code"] == 200
-        assert usage[0]["duration_ms"] >= 0
+        assert usage[0]["ttft_ms"] is not None
+        assert usage[0]["duration_ms"] >= usage[0]["ttft_ms"]
 
 
 def test_generated_gateway_token_protects_v1_routes(tmp_path):
@@ -203,6 +213,71 @@ def test_route_can_be_disabled_and_enabled(tmp_path):
         assert client.get("/v1/models").json()["data"][0]["id"] == "work-model"
 
 
+def test_duplicate_aliases_switch_the_active_upstream(tmp_path):
+    observed = []
+
+    def upstream(request: httpx.Request) -> httpx.Response:
+        observed.append((str(request.url), request.headers["authorization"]))
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/json"},
+            stream=AsyncChunks(b'{"choices":[]}'),
+        )
+
+    upstream_client = httpx.AsyncClient(transport=httpx.MockTransport(upstream))
+    app = create_app(tmp_path / "gateway.db", upstream_client)
+
+    with TestClient(app) as client:
+        first = add_route(client, site_name="Provider A")
+        second = add_route(
+            client,
+            site_name="Provider B",
+            upstream_model="provider-b-model",
+            base_url="https://provider-b.example/v1",
+            api_key="sk-provider-b-key",
+        )
+
+        routes = client.get("/admin/api/routes").json()
+        assert [(route["site_name"], route["enabled"]) for route in routes] == [
+            ("Provider A", False),
+            ("Provider B", True),
+        ]
+        assert [model["id"] for model in client.get("/v1/models").json()["data"]] == [
+            "work-model"
+        ]
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={"model": "work-model", "messages": []},
+        )
+        assert response.status_code == 200
+        assert observed[-1] == (
+            "https://provider-b.example/v1/chat/completions",
+            "Bearer sk-provider-b-key",
+        )
+
+        response = client.patch(
+            f"/admin/api/routes/{first['id']}/enabled",
+            json={"enabled": True},
+        )
+        assert response.status_code == 200
+        routes = client.get("/admin/api/routes").json()
+        assert [(route["site_name"], route["enabled"]) for route in routes] == [
+            ("Provider A", True),
+            ("Provider B", False),
+        ]
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={"model": "work-model", "messages": []},
+        )
+        assert response.status_code == 200
+        assert observed[-1] == (
+            "https://upstream.example/v1/chat/completions",
+            "Bearer sk-secret-route-key",
+        )
+
+
 def test_discover_models_uses_existing_route_key(tmp_path):
     observed = []
 
@@ -271,6 +346,12 @@ def test_streaming_response_is_forwarded(tmp_path):
             assert response.status_code == 200
             assert response.headers["content-type"].startswith("text/event-stream")
             assert "data: [DONE]" in "".join(response.iter_text())
+        usage = client.get("/admin/api/usage").json()
+        assert usage[0]["site_name"] == "Change2Pro"
+        assert usage[0]["request_type"] == "Chat"
+        assert usage[0]["streamed"] == 1
+        assert usage[0]["ttft_ms"] is not None
+        assert usage[0]["duration_ms"] >= usage[0]["ttft_ms"]
 
 
 def test_unknown_model_returns_openai_style_error(tmp_path):

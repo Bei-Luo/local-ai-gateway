@@ -2,7 +2,6 @@ import json
 import os
 import re
 import secrets
-import sqlite3
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -104,6 +103,16 @@ def openai_error(message: str, status_code: int, error_type: str) -> JSONRespons
         status_code=status_code,
         content={"error": {"message": message, "type": error_type, "code": None}},
     )
+
+
+def request_type_for_path(path: str) -> str:
+    if path.endswith("chat/completions"):
+        return "Chat"
+    if path.endswith("responses"):
+        return "Responses"
+    if path.endswith("embeddings"):
+        return "Embeddings"
+    return path.rsplit("/", 1)[-1] or "Unknown"
 
 
 def create_app(
@@ -271,6 +280,7 @@ def create_app(
     @app.get("/v1/models", dependencies=[Depends(require_gateway_key)])
     async def models() -> dict:
         routes = [route for route in store.list_routes() if route["enabled"]]
+        unique_routes = {route["alias"].casefold(): route for route in routes}
         return {
             "object": "list",
             "data": [
@@ -280,7 +290,7 @@ def create_app(
                     "created": 0,
                     "owned_by": "local-ai-gateway",
                 }
-                for route in routes
+                for route in unique_routes.values()
             ],
         }
 
@@ -303,13 +313,26 @@ def create_app(
     )
     async def proxy(upstream_path: str, request: Request):
         started_at = time.perf_counter()
+        request_path = f"/v1/{upstream_path}"
+        request_type = request_type_for_path(request_path)
 
-        def record_usage(status_code: int, alias: str = "", upstream_model: str = "") -> None:
+        def record_usage(
+            status_code: int,
+            alias: str = "",
+            upstream_model: str = "",
+            site_name: str = "",
+            streamed: bool = False,
+            ttft_ms: int | None = None,
+        ) -> None:
             store.record_usage(
                 alias,
                 upstream_model,
-                f"/v1/{upstream_path}",
+                site_name,
+                request_path,
+                request_type,
+                streamed,
                 status_code,
+                ttft_ms,
                 round((time.perf_counter() - started_at) * 1000),
             )
 
@@ -334,6 +357,7 @@ def create_app(
             )
 
         body["model"] = route["upstream_model"]
+        streamed = body.get("stream") is True
         headers = {
             name: value
             for name, value in request.headers.items()
@@ -352,17 +376,39 @@ def create_app(
             )
             upstream_response = await app.state.client.send(upstream_request, stream=True)
         except httpx.RequestError as exc:
-            record_usage(502, alias, route["upstream_model"])
+            record_usage(
+                502,
+                alias,
+                route["upstream_model"],
+                route["site_name"],
+                streamed,
+            )
             return openai_error(f"Upstream request failed: {exc}", 502, "upstream_error")
 
-        record_usage(upstream_response.status_code, alias, route["upstream_model"])
+        async def stream_and_record():
+            ttft_ms = None
+            try:
+                async for chunk in upstream_response.aiter_raw():
+                    if ttft_ms is None:
+                        ttft_ms = round((time.perf_counter() - started_at) * 1000)
+                    yield chunk
+            finally:
+                record_usage(
+                    upstream_response.status_code,
+                    alias,
+                    route["upstream_model"],
+                    route["site_name"],
+                    streamed,
+                    ttft_ms,
+                )
+
         response_headers = {
             name: value
             for name, value in upstream_response.headers.items()
             if name.lower() not in HOP_BY_HOP_HEADERS
         }
         return StreamingResponse(
-            upstream_response.aiter_raw(),
+            stream_and_record(),
             status_code=upstream_response.status_code,
             headers=response_headers,
             background=BackgroundTask(upstream_response.aclose),

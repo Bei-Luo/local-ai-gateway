@@ -144,13 +144,17 @@ td code { display: block; overflow: hidden; font-size: 11px; text-overflow: elli
 .status.disabled::before { background: #a9abae; }
 .actions { display: flex; align-items: center; justify-content: flex-end; gap: 5px; }
 
-.usage-table th:nth-child(1) { width: 20%; }
-.usage-table th:nth-child(2) { width: 18%; }
+.usage-table th:nth-child(1) { width: 18%; }
+.usage-table th:nth-child(2) { width: 17%; }
 .usage-table th:nth-child(3) { width: 18%; }
-.usage-table th:nth-child(4) { width: 22%; }
+.usage-table th:nth-child(4) { width: 15%; }
 .usage-table th:nth-child(5) { width: 10%; }
-.usage-table th:nth-child(6) { width: 12%; }
+.usage-table th:nth-child(6) { width: 11%; }
+.usage-table th:nth-child(7) { width: 11%; }
 .usage-table td { height: 50px; }
+.usage-site { color: var(--ink); font-size: 11px; font-weight: 650; }
+.request-type { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; }
+.request-type small { padding: 2px 5px; color: #4361a8; background: #edf2ff; border-radius: 4px; font-size: 9px; }
 .request-status { font: 700 11px/1 ui-monospace, SFMono-Regular, Consolas, monospace; }
 .request-status.success { color: #287c4e; }
 .request-status.error { color: #b13f39; }
