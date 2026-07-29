@@ -35,8 +35,10 @@ function render() {
       <td><span class="note" title="${escapeHtml(route.note)}">${escapeHtml(route.note || "-")}</span></td>
       <td><code class="url" title="${escapeHtml(route.base_url)}">${escapeHtml(route.base_url)}</code></td>
       <td><code>${escapeHtml(route.api_key_masked)}</code></td>
+      <td>${renderHealth(route)}</td>
       <td><span class="status ${route.enabled ? "" : "disabled"}">${route.enabled ? "已启用" : "已停用"}</span></td>
       <td class="actions">
+        <button class="check-button" type="button" data-check="${route.id}" ${route.health_status === "checking" ? "disabled" : ""}>${route.health_status === "checking" ? "检测中" : "检测"}</button>
         <button class="text-button" type="button" data-edit="${route.id}">编辑</button>
         <button class="route-switch" type="button" role="switch" aria-checked="${route.enabled}" title="${route.enabled ? "停用路由" : "启用此线路并停用其他同名线路"}" data-toggle="${route.id}">
           <span aria-hidden="true"></span><span class="sr-only">${route.enabled ? "停用路由" : "启用路由"}</span>
@@ -50,6 +52,22 @@ function render() {
   elements.body.closest("table").hidden = state.routes.length === 0 && !state.query;
   document.querySelector("#total-count").textContent = state.routes.length;
   document.querySelector("#enabled-count").textContent = state.routes.filter((route) => route.enabled).length;
+}
+
+function renderHealth(route) {
+  const labels = {
+    available: "可用",
+    unavailable: "不可用",
+    checking: "检测中",
+    unchecked: "未检测",
+  };
+  const details = [];
+  if (route.health_error) details.push(route.health_error);
+  if (route.health_checked_at) details.push(formatTimestamp(route.health_checked_at));
+  const latency = route.health_latency_ms == null
+    ? ""
+    : `<small class="health-latency">${route.health_latency_ms} ms</small>`;
+  return `<span class="health-status ${route.health_status}" title="${escapeHtml(details.join(" · "))}">${labels[route.health_status] || "未检测"}${latency}</span>`;
 }
 
 async function loadRoutes() {
@@ -329,6 +347,23 @@ async function toggleRoute(id) {
   showToast(route.enabled ? "路由已停用" : "路由已启用");
 }
 
+async function checkRoute(id) {
+  const route = state.routes.find((item) => item.id === id);
+  if (!route) return;
+  route.health_status = "checking";
+  render();
+  try {
+    const response = await fetch(`/admin/api/routes/${id}/check`, { method: "POST" });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.detail || "检测失败");
+    await loadRoutes();
+    showToast(result.health_status === "available" ? "模型检测通过" : `模型不可用：${result.health_error}`);
+  } catch (error) {
+    await loadRoutes();
+    showToast(error.message);
+  }
+}
+
 document.querySelector("#add-route").addEventListener("click", () => openDialog());
 document.querySelector("#empty-add").addEventListener("click", () => openDialog());
 document.querySelector("#close-dialog").addEventListener("click", closeDialog);
@@ -351,9 +386,11 @@ elements.body.addEventListener("click", (event) => {
   const button = event.target.closest("button");
   if (!button || !elements.body.contains(button)) return;
   const editId = Number(button.dataset.edit);
+  const checkId = Number(button.dataset.check);
   const toggleId = Number(button.dataset.toggle);
   const deleteId = Number(button.dataset.delete);
   if (editId) openDialog(state.routes.find((route) => route.id === editId));
+  if (checkId) checkRoute(checkId);
   if (toggleId) toggleRoute(toggleId);
   if (deleteId) deleteRoute(deleteId);
 });

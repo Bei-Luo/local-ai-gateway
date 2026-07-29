@@ -322,6 +322,85 @@ def test_discover_models_uses_existing_route_key(tmp_path):
     ]
 
 
+def test_route_check_uses_responses_stream_and_persists_availability(tmp_path):
+    observed = {}
+    route_id = None
+
+    def upstream(request: httpx.Request) -> httpx.Response:
+        observed["url"] = str(request.url)
+        observed["authorization"] = request.headers["authorization"]
+        observed["body"] = json.loads(request.content)
+        observed["status_during_request"] = app.state.store.get_route(route_id)[
+            "health_status"
+        ]
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            stream=AsyncChunks(
+                b'event: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"Hello"}\n\n',
+                b'data: {"type":"response.completed","response":{"id":"resp-1"}}\n\n',
+            ),
+        )
+
+    upstream_client = httpx.AsyncClient(transport=httpx.MockTransport(upstream))
+    app = create_app(tmp_path / "gateway.db", upstream_client)
+
+    with TestClient(app) as client:
+        route = add_route(client)
+        route_id = route["id"]
+        response = client.post(f"/admin/api/routes/{route['id']}/check")
+        saved = client.get("/admin/api/routes").json()[0]
+
+    assert response.status_code == 200
+    assert response.json()["health_status"] == "available"
+    assert response.json()["health_latency_ms"] is not None
+    assert saved["health_status"] == "available"
+    assert saved["health_checked_at"] is not None
+    assert observed == {
+        "url": "https://upstream.example/v1/responses",
+        "authorization": "Bearer sk-secret-route-key",
+        "body": {"model": "vendor-model-v2", "input": "hello", "stream": True},
+        "status_during_request": "checking",
+    }
+
+
+def test_route_check_marks_missing_reply_unavailable(tmp_path):
+    def upstream(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            stream=AsyncChunks(
+                b'data: {"type":"response.created","response":{"id":"resp-1"}}\n\n',
+                b'data: {"type":"response.completed","response":{"id":"resp-1","output":[]}}\n\n',
+                b"data: [DONE]\n\n",
+            ),
+        )
+
+    upstream_client = httpx.AsyncClient(transport=httpx.MockTransport(upstream))
+    app = create_app(tmp_path / "gateway.db", upstream_client)
+
+    with TestClient(app) as client:
+        route = add_route(client)
+        result = client.post(f"/admin/api/routes/{route['id']}/check").json()
+
+    assert result["health_status"] == "unavailable"
+    assert result["health_error"] == "流式响应中未收到有效回复"
+
+
+def test_route_check_marks_upstream_error_unavailable(tmp_path):
+    upstream_client = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda _: httpx.Response(401))
+    )
+    app = create_app(tmp_path / "gateway.db", upstream_client)
+
+    with TestClient(app) as client:
+        route = add_route(client)
+        result = client.post(f"/admin/api/routes/{route['id']}/check").json()
+
+    assert result["health_status"] == "unavailable"
+    assert result["health_error"] == "HTTP 401"
+
+
 def test_streaming_response_is_forwarded(tmp_path):
     def upstream(_: httpx.Request) -> httpx.Response:
         return httpx.Response(

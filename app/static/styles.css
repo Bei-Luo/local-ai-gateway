@@ -131,8 +131,8 @@ th { padding: 10px 14px; color: var(--subtle); background: #fafafa; border-botto
 td { height: 58px; padding: 9px 14px; border-bottom: 1px solid #e9eaea; font-size: 12px; vertical-align: middle; }
 tbody tr:last-child td { border-bottom: 0; }
 tbody tr:hover { background: #fafbff; }
-th:nth-child(1) { width: 11%; } th:nth-child(2) { width: 14%; } th:nth-child(3) { width: 14%; } th:nth-child(4) { width: 11%; }
-th:nth-child(5) { width: 18%; } th:nth-child(6) { width: 11%; } th:nth-child(7) { width: 8%; } th:nth-child(8) { width: 13%; }
+th:nth-child(1) { width: 10%; } th:nth-child(2) { width: 11%; } th:nth-child(3) { width: 11%; } th:nth-child(4) { width: 9%; }
+th:nth-child(5) { width: 15%; } th:nth-child(6) { width: 9%; } th:nth-child(7) { width: 9%; } th:nth-child(8) { width: 8%; } th:nth-child(9) { width: 18%; }
 td code { display: block; overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .site-name { display: block; overflow: hidden; color: var(--ink); font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .model-name { color: var(--ink); font-weight: 700; }
@@ -142,6 +142,18 @@ td code { display: block; overflow: hidden; font-size: 11px; text-overflow: elli
 .status::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: #35a96b; }
 .status.disabled { color: var(--subtle); }
 .status.disabled::before { background: #a9abae; }
+.health-status { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; white-space: nowrap; }
+.health-status::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: #a9abae; }
+.health-status.available { color: #287c4e; }
+.health-status.available::before { background: #35a96b; }
+.health-status.unavailable { color: #b13f39; }
+.health-status.unavailable::before { background: #d7514a; }
+.health-status.checking { color: #8a671d; }
+.health-status.checking::before { background: #d99e32; }
+.health-latency { color: var(--muted); font: 500 10px/1 ui-monospace, SFMono-Regular, Consolas, monospace; }
+.check-button { min-height: 30px; padding: 0 8px; color: #4e5665; background: transparent; border: 0; border-radius: 6px; font-size: 12px; font-weight: 650; }
+.check-button:hover { background: #f1f2f2; }
+.check-button:disabled { opacity: .55; cursor: wait; }
 .actions { display: flex; align-items: center; justify-content: flex-end; gap: 5px; }
 
 .usage-table th:nth-child(1) { width: 18%; }
@@ -218,14 +230,15 @@ dialog small { min-height: 14px; color: var(--subtle); font-size: 10px; font-wei
   tbody { display: grid; gap: 8px; }
   tbody tr { display: grid; grid-template-columns: 1fr auto; padding: 13px; background: var(--surface); border: 1px solid var(--line); border-radius: 7px; }
   td { display: block; height: auto; padding: 3px 0; border: 0; min-width: 0; }
-  td:nth-child(1), td:nth-child(2), td:nth-child(3), td:nth-child(4), td:nth-child(5), td:nth-child(6) { grid-column: 1 / -1; }
+  td:nth-child(1), td:nth-child(2), td:nth-child(3), td:nth-child(4), td:nth-child(5), td:nth-child(6), td:nth-child(7) { grid-column: 1 / -1; }
   td:nth-child(2)::before { content: "本地模型  "; color: var(--subtle); }
   td:nth-child(3)::before { content: "上游模型  "; color: var(--subtle); }
   td:nth-child(4)::before { content: "备注  "; color: var(--subtle); }
   td:nth-child(5)::before { content: "上游站点  "; color: var(--subtle); }
   td:nth-child(6)::before { content: "API Key  "; color: var(--subtle); }
-  td:nth-child(7) { align-self: center; }
-  td:nth-child(8) { grid-column: 2; }
+  td:nth-child(7)::before { content: "可用状态  "; color: var(--subtle); }
+  td:nth-child(8) { align-self: center; }
+  td:nth-child(9) { grid-column: 2; }
   td code { display: inline; white-space: normal; overflow-wrap: anywhere; }
   td .site-name { display: inline; white-space: normal; overflow-wrap: anywhere; }
   td .note { display: inline; white-space: normal; overflow-wrap: anywhere; }

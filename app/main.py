@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import re
@@ -93,6 +94,10 @@ def public_route(route: dict) -> dict:
         "base_url": route["base_url"],
         "api_key_masked": mask_key(route["api_key"]),
         "enabled": bool(route["enabled"]),
+        "health_status": route["health_status"],
+        "health_checked_at": route["health_checked_at"],
+        "health_latency_ms": route["health_latency_ms"],
+        "health_error": route["health_error"],
         "created_at": route["created_at"],
         "updated_at": route["updated_at"],
     }
@@ -113,6 +118,18 @@ def request_type_for_path(path: str) -> str:
     if path.endswith("embeddings"):
         return "Embeddings"
     return path.rsplit("/", 1)[-1] or "Unknown"
+
+
+def contains_output_text(value) -> bool:
+    if isinstance(value, dict):
+        return any(
+            (key in {"text", "output_text"} and isinstance(item, str) and item.strip())
+            or contains_output_text(item)
+            for key, item in value.items()
+        )
+    if isinstance(value, list):
+        return any(contains_output_text(item) for item in value)
+    return False
 
 
 def create_app(
@@ -156,18 +173,12 @@ def create_app(
     async def create_route(payload: RoutePayload) -> dict:
         if not payload.api_key:
             raise HTTPException(status_code=422, detail="API key is required")
-        try:
-            route = store.create_route(payload.model_dump())
-        except sqlite3.IntegrityError as exc:
-            raise HTTPException(status_code=409, detail="Model alias already exists") from exc
+        route = store.create_route(payload.model_dump())
         return public_route(route)
 
     @app.put("/admin/api/routes/{route_id}")
     async def update_route(route_id: int, payload: RoutePayload) -> dict:
-        try:
-            route = store.update_route(route_id, payload.model_dump())
-        except sqlite3.IntegrityError as exc:
-            raise HTTPException(status_code=409, detail="Model alias already exists") from exc
+        route = store.update_route(route_id, payload.model_dump())
         if not route:
             raise HTTPException(status_code=404, detail="Route not found")
         return public_route(route)
@@ -183,6 +194,81 @@ def create_app(
         if not route:
             raise HTTPException(status_code=404, detail="Route not found")
         return public_route(route)
+
+    @app.post("/admin/api/routes/{route_id}/check")
+    async def check_route(route_id: int) -> dict:
+        route = store.get_route(route_id)
+        if not route:
+            raise HTTPException(status_code=404, detail="Route not found")
+
+        store.set_health(route_id, "checking", None)
+        started_at = time.perf_counter()
+        response = None
+        try:
+            async with asyncio.timeout(60):
+                upstream_request = app.state.client.build_request(
+                    "POST",
+                    f"{route['base_url']}/responses",
+                    headers={
+                        "Authorization": f"Bearer {route['api_key']}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": route["upstream_model"],
+                        "input": "hello",
+                        "stream": True,
+                    },
+                )
+                response = await app.state.client.send(upstream_request, stream=True)
+                if not response.is_success:
+                    error = f"HTTP {response.status_code}"
+                    checked = store.set_health(route_id, "unavailable", None, error)
+                    return public_route(checked)
+
+                received_reply = False
+                async for line in response.aiter_lines():
+                    if not line.startswith("data:"):
+                        continue
+                    payload_text = line[5:].strip()
+                    if not payload_text or payload_text == "[DONE]":
+                        continue
+                    try:
+                        event = json.loads(payload_text)
+                    except json.JSONDecodeError:
+                        continue
+                    event_type = event.get("type") if isinstance(event, dict) else None
+                    if event_type == "response.output_text.delta" and event.get("delta"):
+                        received_reply = True
+                        break
+                    if event_type == "response.completed" and contains_output_text(
+                        event.get("response")
+                    ):
+                        received_reply = True
+                        break
+
+            latency_ms = round((time.perf_counter() - started_at) * 1000)
+            if received_reply:
+                checked = store.set_health(route_id, "available", latency_ms)
+            else:
+                checked = store.set_health(
+                    route_id,
+                    "unavailable",
+                    latency_ms,
+                    "流式响应中未收到有效回复",
+                )
+            return public_route(checked)
+        except httpx.RequestError as exc:
+            checked = store.set_health(route_id, "unavailable", None, str(exc))
+            return public_route(checked)
+        except TimeoutError:
+            checked = store.set_health(route_id, "unavailable", None, "检测超时（60 秒）")
+            return public_route(checked)
+        except asyncio.CancelledError:
+            store.set_health(route_id, "unavailable", None, "检测已取消")
+            raise
+        finally:
+            if response is not None:
+                await response.aclose()
 
     @app.get("/admin/api/gateway-token")
     async def gateway_token_status() -> dict:

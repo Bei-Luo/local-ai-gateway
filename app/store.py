@@ -22,6 +22,10 @@ class RouteStore:
                     base_url TEXT NOT NULL,
                     api_key TEXT NOT NULL,
                     enabled INTEGER NOT NULL DEFAULT 1,
+                    health_status TEXT NOT NULL DEFAULT 'unchecked',
+                    health_checked_at TEXT,
+                    health_latency_ms INTEGER,
+                    health_error TEXT NOT NULL DEFAULT '',
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 )
@@ -65,6 +69,10 @@ class RouteStore:
                         base_url TEXT NOT NULL,
                         api_key TEXT NOT NULL,
                         enabled INTEGER NOT NULL DEFAULT 1,
+                        health_status TEXT NOT NULL DEFAULT 'unchecked',
+                        health_checked_at TEXT,
+                        health_latency_ms INTEGER,
+                        health_error TEXT NOT NULL DEFAULT '',
                         created_at TEXT NOT NULL,
                         updated_at TEXT NOT NULL
                     )
@@ -81,6 +89,21 @@ class RouteStore:
                     """
                 )
                 self.connection.execute("DROP TABLE model_routes_old")
+            route_columns = {
+                row["name"]
+                for row in self.connection.execute("PRAGMA table_info(model_routes)").fetchall()
+            }
+            route_migrations = {
+                "health_status": "TEXT NOT NULL DEFAULT 'unchecked'",
+                "health_checked_at": "TEXT",
+                "health_latency_ms": "INTEGER",
+                "health_error": "TEXT NOT NULL DEFAULT ''",
+            }
+            for column, definition in route_migrations.items():
+                if column not in route_columns:
+                    self.connection.execute(
+                        f"ALTER TABLE model_routes ADD COLUMN {column} {definition}"
+                    )
             self.connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS settings (
@@ -196,7 +219,8 @@ class RouteStore:
                 """
                 UPDATE model_routes
                 SET site_name = ?, alias = ?, upstream_model = ?, note = ?, base_url = ?, api_key = ?,
-                    enabled = ?, updated_at = ?
+                    enabled = ?, health_status = 'unchecked', health_checked_at = NULL,
+                    health_latency_ms = NULL, health_error = '', updated_at = ?
                 WHERE id = ?
                 """,
                 (
@@ -211,6 +235,28 @@ class RouteStore:
                     route_id,
                 ),
             )
+        return self.get_route(route_id)
+
+    def set_health(
+        self,
+        route_id: int,
+        status: str,
+        latency_ms: int | None,
+        error: str = "",
+    ) -> dict | None:
+        now = datetime.now(timezone.utc).isoformat()
+        with self.lock, self.connection:
+            cursor = self.connection.execute(
+                """
+                UPDATE model_routes
+                SET health_status = ?, health_checked_at = ?, health_latency_ms = ?,
+                    health_error = ?
+                WHERE id = ?
+                """,
+                (status, now, latency_ms, error[:500], route_id),
+            )
+        if cursor.rowcount == 0:
+            return None
         return self.get_route(route_id)
 
     def delete_route(self, route_id: int) -> bool:
