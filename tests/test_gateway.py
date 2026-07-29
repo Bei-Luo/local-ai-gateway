@@ -4,6 +4,7 @@ import sqlite3
 import httpx
 from fastapi.testclient import TestClient
 
+from app import __version__
 from app.main import create_app
 
 
@@ -14,6 +15,13 @@ class AsyncChunks(httpx.AsyncByteStream):
     async def __aiter__(self):
         for chunk in self.chunks:
             yield chunk
+
+
+def test_openapi_uses_package_version(tmp_path):
+    app = create_app(tmp_path / "gateway.db", httpx.AsyncClient())
+
+    with TestClient(app) as client:
+        assert client.get("/openapi.json").json()["info"]["version"] == __version__
 
 
 def add_route(client: TestClient, **overrides) -> dict:

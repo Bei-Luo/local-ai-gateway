@@ -4,6 +4,7 @@
 
 - Install: `python -m venv .venv`, then `.venv\Scripts\python -m pip install -e ".[test]"`.
 - Run locally: `.venv\Scripts\python -m uvicorn app.main:app --host 127.0.0.1 --port 8787`.
+- Windows launcher: `.\scripts\start.ps1`; it checks `.venv` and refuses an occupied port.
 - Test all: `.venv\Scripts\python -m pytest`.
 - Test one: `.venv\Scripts\python -m pytest tests/test_gateway.py::<test_name>`.
 
@@ -19,3 +20,4 @@
 - Default state is `data/gateway.db`; tests must pass a temporary database to `create_app`.
 - Keep the default bind address on `127.0.0.1`: the admin API has no login. `GATEWAY_API_KEY` overrides a UI-generated token; either protects `/v1/*`, not the admin UI.
 - Upstreams must expose OpenAI-compatible paths beneath their configured Base URL. The gateway does not translate between vendor-specific protocols.
+- Keep the package version in `pyproject.toml`; `app.__version__` and FastAPI metadata read installed package metadata. Release notes and migration instructions live in `RELEASE_NOTES.md` and `MIGRATIONS.md`.

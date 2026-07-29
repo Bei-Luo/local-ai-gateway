@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from starlette.background import BackgroundTask
 
+from app import __version__
 from app.store import RouteStore
 
 
@@ -148,7 +149,7 @@ def create_app(
             await app.state.client.aclose()
         store.close()
 
-    app = FastAPI(title="Local AI Gateway", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="Local AI Gateway", version=__version__, lifespan=lifespan)
     app.state.store = store
 
     def require_gateway_key(request: Request) -> None:
@@ -396,6 +397,7 @@ def create_app(
         "/v1/{upstream_path:path}",
         methods=["POST", "PUT", "PATCH", "DELETE"],
         dependencies=[Depends(require_gateway_key)],
+        include_in_schema=False,
     )
     async def proxy(upstream_path: str, request: Request):
         started_at = time.perf_counter()

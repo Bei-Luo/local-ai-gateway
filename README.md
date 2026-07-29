@@ -25,6 +25,18 @@ python -m venv .venv
 .venv\Scripts\python -m uvicorn app.main:app --host 127.0.0.1 --port 8787
 ```
 
+Windows 也可以使用启动脚本；它会检查虚拟环境和端口占用，并固定监听回环地址：
+
+```powershell
+.\scripts\start.ps1
+```
+
+使用其他端口：
+
+```powershell
+.\scripts\start.ps1 -Port 8788
+```
+
 打开 <http://127.0.0.1:8787> 配置模型路由。数据库默认位于 `data/gateway.db`。
 
 可选环境变量：
@@ -85,6 +97,10 @@ python -m venv .venv
 ```powershell
 .venv\Scripts\python -m pytest tests/test_gateway.py::test_proxy_rewrites_model_and_authorization
 ```
+
+## 版本与升级
+
+稳定版本使用 `v<major>.<minor>.<patch>` Git 标签。当前版本的更新说明见 [RELEASE_NOTES.md](RELEASE_NOTES.md)，数据库迁移与升级步骤见 [MIGRATIONS.md](MIGRATIONS.md)。
 
 ## 安全边界
 
